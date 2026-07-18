@@ -5,24 +5,21 @@ import {Injectable} from "@angular/core"
 })
 export default class DisneyUtils {
 
-  constructor() {
-  }
-
   getAllCharactersEndpoint(): string {
     return this.DISNEY_ENDPOINTS.getAllCharacters
   }
 
-  filterCharacterEndpoint(): string {
-    return this.DISNEY_ENDPOINTS.filterCharacter
+  filterCharacterEndpoint(name: string): string {
+    return this.DISNEY_ENDPOINTS.filterCharacter.replace(':name', encodeURIComponent(name))
   }
 
   getOneCharacterEndpoint(id: string): string {
-    return this.DISNEY_ENDPOINTS.getOneCharacter
+    return this.DISNEY_ENDPOINTS.getOneCharacter.replace(':id', id)
   }
 
   private readonly DISNEY_ENDPOINTS = {
     getAllCharacters: `${this.baseUrl}/character`,
-    filterCharacter: `${this.baseUrl}/character?queryParams`,
+    filterCharacter: `${this.baseUrl}/character?name=:name`,
     getOneCharacter: `${this.baseUrl}/character/:id`
   }
 

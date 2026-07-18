@@ -1,5 +1,6 @@
 import {ChangeDetectionStrategy, Component, input, InputSignal} from '@angular/core';
 import {Character} from '../models/disney.models';
+import {RouterLink} from '@angular/router';
 
 @Component({
   selector: 'sbu-disney-character-card',
@@ -37,11 +38,9 @@ import {Character} from '../models/disney.models';
             }
           </ul>
           <a
-            [href]="character().sourceUrl"
-            target="_blank"
-            rel="noopener noreferrer"
+            [routerLink]="['/disney', character()._id]"
             class="mt-auto inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-            View on Disney Wiki
+            Open details
             <span aria-hidden="true">↗</span>
           </a>
         </div>
@@ -63,6 +62,9 @@ import {Character} from '../models/disney.models';
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    RouterLink
+  ]
 })
 export class DisneyCharacterCardComponent {
   character: InputSignal<Character> = input.required<Character>();

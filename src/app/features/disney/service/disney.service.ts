@@ -15,4 +15,8 @@ export class DisneyService {
     return this.http.get<DisneyResponse>(this.disneyUtils.getAllCharactersEndpoint());
   }
 
+  getCharacterById(id: string): Observable<DisneyResponse> {
+    return this.http.get<DisneyResponse>(this.disneyUtils.getOneCharacterEndpoint(id));
+  }
+
 }
