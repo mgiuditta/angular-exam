@@ -21,9 +21,8 @@ import { Directive, ElementRef, afterNextRender, inject } from '@angular/core';
 @Directive({ selector: '[sbuAutoFocus]' })
 export class AutoFocus {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly lol = inject(ElementRef)
 
   constructor() {
-    afterNextRender(() => this.lol.nativeElement.focus());
+    afterNextRender(() => this.host.nativeElement.focus());
   }
 }
