@@ -34,22 +34,38 @@ const pages: [string, Type<unknown>][] = [
   ['typescript-types', TypescriptTypesPage],
 ];
 
+async function render(page: Type<unknown>) {
+  // necessario per i componenti con @defer: le dipendenze lazy vanno risolte prima
+  await TestBed.configureTestingModule({
+    imports: [page],
+    // httpResource: niente rete nei test, un interceptor risponde subito
+    providers: [provideHttpClient(withInterceptors([() => of(new HttpResponse({ status: 200, body: {} }))]))],
+  }).compileComponents();
+  const fixture = TestBed.createComponent(page);
+  await fixture.whenStable();
+  return fixture;
+}
+
 describe('Pagine lab', () => {
   it.each(pages)('%s si renderizza', async (_, page) => {
-    // necessario per i componenti con @defer: le dipendenze lazy vanno risolte prima
-    await TestBed.configureTestingModule({
-      imports: [page],
-      // httpResource: niente rete nei test, un interceptor risponde subito
-      providers: [provideHttpClient(withInterceptors([() => of(new HttpResponse({ status: 200, body: {} }))]))],
-    }).compileComponents();
-    const fixture = TestBed.createComponent(page);
-    await fixture.whenStable();
+    const fixture = await render(page);
     expect(fixture.nativeElement.querySelector('h1')?.textContent).toBeTruthy();
     // un secondo giro con eventi: click su tutti i bottoni della pagina
     for (const button of fixture.nativeElement.querySelectorAll('button[type="button"]')) {
       (button as HTMLButtonElement).click();
     }
     await fixture.whenStable();
+    fixture.destroy();
+  });
+
+  // Il catalogo RxJS mostra lo snippet dentro sbu-operator-group, dopo la scelta dell'operatore.
+  it.each(pages)('%s: ogni esempio ha lo snippet di codice', async (_, page) => {
+    const fixture = await render(page);
+    const examples: HTMLElement[] = [...fixture.nativeElement.querySelectorAll('sbu-example')];
+    const withoutCode = examples
+      .filter((example) => !example.querySelector('sbu-code, sbu-operator-group'))
+      .map((example) => example.querySelector('h2')?.textContent?.trim());
+    expect(withoutCode).toEqual([]);
     fixture.destroy();
   });
 });
