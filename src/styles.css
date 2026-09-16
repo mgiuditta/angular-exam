@@ -256,3 +256,19 @@
 .scrollbar-overlay:hover::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Lab: stili condivisi degli esempi */
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .field {
+    @apply h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring;
+  }
+}
+
+@layer base {
+  code {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em];
+  }
+}
