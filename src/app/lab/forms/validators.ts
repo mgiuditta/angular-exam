@@ -41,3 +41,35 @@ export function usernameAvailable(delayMs = 800): AsyncValidatorFn {
       map((taken) => (taken ? { usernameTaken: { value: control.value } } : null)),
     );
 }
+
+/**
+ * Validator su un FormArray (o su qualsiasi controllo con valore array): numero minimo di elementi.
+ * Su un array il valore è già l'array dei valori dei figli: non serve castare a `FormArray`.
+ */
+export function minArrayLength(min: number): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value: unknown = control.value;
+    if (!Array.isArray(value)) return null;
+    return value.length >= min ? null : { minArrayLength: { required: min, actual: value.length } };
+  };
+}
+
+/** Validator su un FormArray: nessun duplicato (confronto case-insensitive sui valori non vuoti). */
+export function uniqueValues(): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value: unknown = control.value;
+    if (!Array.isArray(value)) return null;
+    const seen = value.map((item) => String(item ?? '').trim().toLowerCase()).filter(Boolean);
+    const duplicate = seen.find((item, index) => seen.indexOf(item) !== index);
+    return duplicate === undefined ? null : { duplicate: { value: duplicate } };
+  };
+}
+
+/** Validator parametrico usato dalla direttiva `[sbuForbiddenWord]` (esempio 18). */
+export function forbiddenWord(word: string): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value: unknown = control.value;
+    if (typeof value !== 'string' || value === '' || word === '') return null;
+    return value.toLowerCase().includes(word.toLowerCase()) ? { forbiddenWord: { word } } : null;
+  };
+}

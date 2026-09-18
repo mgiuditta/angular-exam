@@ -31,6 +31,14 @@ export function errorMessage(errors: ValidationErrors | null | undefined): strin
       return 'Le password non coincidono.';
     case 'usernameTaken':
       return `"${detail.value}" è già in uso.`;
+    case 'minArrayLength':
+      return `Servono almeno ${detail.required} voci (ora ${detail.actual}).`;
+    case 'duplicate':
+      return `"${detail.value}" è ripetuto: le voci devono essere diverse.`;
+    case 'forbiddenWord':
+      return `Il testo non può contenere "${detail.word}".`;
+    case 'server':
+      return String(detail);
     default:
       return `Valore non valido (${key}).`;
   }

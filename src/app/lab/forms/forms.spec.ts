@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { form, FormField, max, min } from '@angular/forms/signals';
 import { firstValueFrom, Observable } from 'rxjs';
 import { AccessibleErrorsDemo } from './demos/accessible-errors';
@@ -9,7 +9,14 @@ import { focusFirstInvalid } from './focus-first-invalid';
 import FormsPage from './forms.page';
 import { RatingField } from './rating-field';
 import { StarRating } from './star-rating';
-import { matchFields, strongPassword, usernameAvailable } from './validators';
+import {
+  forbiddenWord,
+  matchFields,
+  minArrayLength,
+  strongPassword,
+  uniqueValues,
+  usernameAvailable,
+} from './validators';
 
 @Component({
   imports: [ReactiveFormsModule, StarRating],
@@ -80,6 +87,26 @@ describe('Form', () => {
       expect(control.pending).toBe(true);
       await new Promise((resolve) => setTimeout(resolve));
       expect(control.hasError('usernameTaken')).toBe(true);
+    });
+
+    it('minArrayLength e uniqueValues guardano il valore dell’array', () => {
+      const tags = new FormArray([new FormControl('angular'), new FormControl('forms')], [
+        minArrayLength(3),
+        uniqueValues(),
+      ]);
+      expect(tags.errors).toEqual({ minArrayLength: { required: 3, actual: 2 } });
+
+      tags.push(new FormControl('Angular')); // duplicato: il confronto ignora le maiuscole
+      expect(tags.errors).toEqual({ duplicate: { value: 'angular' } });
+
+      tags.at(2).setValue('signals');
+      expect(tags.valid).toBe(true);
+    });
+
+    it('forbiddenWord ignora il vuoto ed è case-insensitive', () => {
+      expect(forbiddenWord('gratis')(new FormControl(''))).toBeNull();
+      expect(forbiddenWord('gratis')(new FormControl('Tutto GRATIS'))).toEqual({ forbiddenWord: { word: 'gratis' } });
+      expect(forbiddenWord('gratis')(new FormControl('tutto a pagamento'))).toBeNull();
     });
 
     it('errorMessage traduce il primo errore', () => {
@@ -174,7 +201,7 @@ describe('Form', () => {
     await fixture.whenStable();
     const element: HTMLElement = fixture.nativeElement;
     expect(element.querySelector('h1')?.textContent).toBe('Form');
-    expect(element.querySelectorAll('sbu-example').length).toBe(14);
+    expect(element.querySelectorAll('sbu-example').length).toBe(22);
 
     for (const button of element.querySelectorAll<HTMLButtonElement>('button[type="button"]')) {
       button.click();

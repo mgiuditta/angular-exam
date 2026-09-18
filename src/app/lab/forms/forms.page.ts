@@ -4,16 +4,24 @@ import { Example, LabPage } from '../shared/example';
 import { AccessibleErrorsDemo } from './demos/accessible-errors';
 import { AsyncValidatorDemo } from './demos/async-validator';
 import { BuiltinValidatorsDemo } from './demos/builtin-validators';
+import { ComposedValidatorsDemo } from './demos/composed-validators';
+import { ConditionalValidatorsDemo } from './demos/conditional-validators';
 import { CustomValidatorsDemo } from './demos/custom-validators';
 import { CvaRatingDemo } from './demos/cva-rating';
 import { FormArrayDemo } from './demos/form-array';
 import { FormBuilderDemo } from './demos/form-builder';
 import { FormEventsDemo } from './demos/form-events';
+import { ServerErrorsDemo } from './demos/server-errors';
 import { SignalFormBasicsDemo } from './demos/signal-form-basics';
 import { SignalFormControlDemo } from './demos/signal-form-control';
 import { SignalFormLogicDemo } from './demos/signal-form-logic';
+import { SignalSchemaDemo } from './demos/signal-schema';
+import { SignalValidatorsDemo } from './demos/signal-validators';
+import { SubFormDemo } from './demos/sub-form';
 import { TemplateDrivenDemo } from './demos/template-driven';
 import { TypedControlsDemo } from './demos/typed-controls';
+import { UpdateOnDemo } from './demos/update-on';
+import { ValidatorDirectiveDemo } from './demos/validator-directive';
 import { ValueApiDemo } from './demos/value-api';
 
 const CODE = {
@@ -364,6 +372,203 @@ const CODE = {
 
     <sbu-rating-field [formField]="review.rating" label="Voto" />
   `,
+  composed: ts`
+    // compose unisce più ValidatorFn in UNA sola (compose([]) e compose(null) → null)
+    private readonly titleValidator = Validators.compose([
+      Validators.required, Validators.minLength(5), Validators.maxLength(60),
+    ])!;
+    // composeAsync fa lo stesso con gli AsyncValidatorFn
+    // Validators.nullValidator non fa nulla: segnaposto "nessun validator"
+
+    talk = this.fb.group({
+      title: ['', this.titleValidator],
+      // i validator dell'array guardano il valore dell'INTERO array
+      tags: this.fb.array([this.createTag('angular')], [minArrayLength(2), uniqueValues()]),
+    });
+
+    export function minArrayLength(min: number): ValidatorFn {
+      return (control) => {
+        const value: unknown = control.value;
+        if (!Array.isArray(value)) return null;
+        return value.length >= min ? null : { minArrayLength: { required: min, actual: value.length } };
+      };
+    }
+
+    // template: array di CONTROLLI (non di gruppi) → [formControlName]="i"
+    <fieldset formArrayName="tags">
+      @for (tag of tags.controls; track tag; let i = $index) {
+        <input [formControlName]="i" />
+      }
+    </fieldset>
+    @if (tags.errors) { {{ tags.errors | errorMessage }} }   // l'errore sta sull'array
+  `,
+  conditional: ts`
+    contact = this.fb.group({ channel: ['email' as Channel], email: [''], phone: [''] });
+
+    constructor() {
+      // ascolto SOLO il campo che decide: nessun loop, non riscrivo valori
+      this.contact.controls.channel.valueChanges
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe((channel) => this.applyValidators(channel));
+      this.applyValidators(this.contact.controls.channel.value); // stato iniziale
+    }
+
+    private applyValidators(channel: Channel): void {
+      const { email, phone } = this.contact.controls;
+      if (channel === 'email') {
+        email.setValidators([Validators.required, Validators.email]); // SOSTITUISCE i validator
+        phone.clearValidators();                                      // = setValidators([])
+      } else {
+        email.setValidators(Validators.email);
+        phone.setValidators([Validators.required, Validators.pattern(/^\\+?[0-9 ]{6,}$/)]);
+      }
+      email.updateValueAndValidity(); // senza questo lo stato resta quello dei vecchi validator
+      phone.updateValueAndValidity();
+    }
+
+    email.hasValidator(Validators.required); // funziona solo con la STESSA referenza di funzione
+  `,
+  updateOn: ts`
+    strategies = new FormGroup(
+      {
+        onChange: new FormControl('', { nonNullable: true, validators: Validators.required }),
+        onBlur:   new FormControl('', { nonNullable: true, validators: Validators.required, updateOn: 'blur' }),
+        onSubmit: new FormControl('', { nonNullable: true, validators: Validators.required, updateOn: 'submit' }),
+      },
+      { updateOn: 'change' }, // default dei figli: il figlio può sovrascriverlo
+    );
+
+    // 'change'  → valore e validazione a ogni tasto (default)
+    // 'blur'    → solo quando il campo perde il focus (meno validator async, meno render)
+    // 'submit'  → solo al submit del form: serve la direttiva [formGroup] su un <form>
+    //             (prima del primo submit value resta al valore iniziale e il controllo è pristine)
+
+    count = toSignal(control.valueChanges.pipe(map(() => 1), scan((total, one) => total + one, 0)),
+                     { initialValue: 0 });
+  `,
+  validatorDirective: ts`
+    @Directive({
+      selector: '[sbuForbiddenWord]',
+      providers: [{ provide: NG_VALIDATORS, useExisting: ForbiddenWordValidator, multi: true }], // multi!
+    })
+    export class ForbiddenWordValidator implements Validator {
+      readonly word = input.required<string>({ alias: 'sbuForbiddenWord' });
+      private onValidatorChange: () => void = () => {};
+
+      constructor() {
+        effect(() => { this.word(); this.onValidatorChange(); }); // parametro cambiato → rivalida
+      }
+
+      validate(control: AbstractControl): ValidationErrors | null {
+        return forbiddenWord(this.word())(control);
+      }
+      registerOnValidatorChange(fn: () => void): void { this.onValidatorChange = fn; }
+    }
+
+    // versione asincrona: stesso schema con NG_ASYNC_VALIDATORS e validate() che torna un Observable
+
+    // template: la stessa direttiva vale per template-driven e reactive
+    <input name="title" required [sbuForbiddenWord]="word()" [(ngModel)]="title" />
+    <input [formControl]="slogan" [sbuForbiddenWord]="word()" />
+    <input [formControl]="username" [sbuUsernameFree]="400" />
+  `,
+  subForm: ts`
+    @Component({
+      selector: 'sbu-address-fields',
+      // il TEMPLATE del figlio riceve il formGroupName dell'elemento host:
+      // viewProviders, non providers, perché formControlName lo inietta con @Host()
+      viewProviders: [{ provide: ControlContainer, useExisting: FormGroupName }],
+      // (se il figlio NON è dentro un formGroupName: useFactory: () => inject(ControlContainer, { skipSelf: true }))
+      template: \`<input formControlName="street" /> <input formControlName="city" />\`,
+    })
+    export class AddressFields {
+      protected readonly container = inject(ControlContainer); // = la direttiva formGroupName dell'host
+    }
+
+    // padre: il tipo del gruppo resta completo, niente ControlValueAccessor
+    checkout = new FormGroup({ billing: createAddressGroup(), shipping: createAddressGroup() });
+
+    <form [formGroup]="checkout">
+      <sbu-address-fields formGroupName="billing" idPrefix="sf-billing" />
+      <sbu-address-fields formGroupName="shipping" idPrefix="sf-shipping" />
+    </form>
+  `,
+  serverErrors: ts`
+    const errors = await saveCoupon(this.coupon.getRawValue()); // { code: 'Codice non valido.' }
+
+    for (const [name, message] of Object.entries(errors)) {
+      const control = this.coupon.get(name);
+      control?.setErrors({ ...control.errors, server: message }); // setErrors SOSTITUISCE gli errori
+      control?.markAsTouched();
+    }
+
+    // un errore messo a mano NON viene ricalcolato: va tolto quando il valore cambia
+    control.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (control.hasError('server')) {
+        const { server, ...rest } = control.errors ?? {};
+        control.setErrors(Object.keys(rest).length ? rest : null); // setErrors(null) = nessun errore
+      }
+    });
+
+    this.coupon.markAsPending();        // status 'PENDING' senza validator asincroni
+    this.coupon.updateValueAndValidity(); // esce da PENDING ricalcolando i sincroni
+  `,
+  signalValidators: ts`
+    product = form(this.model, (path) => {
+      required(path.name, { message: 'Il nome è obbligatorio.' });
+      minLength(path.name, 3); maxLength(path.name, 40);
+
+      required(path.sku, { error: requiredError({ message: 'Lo SKU è obbligatorio.' }) }); // error ↔ message
+      pattern(path.sku, /^[A-Z]{2}-\\d{4}$/, { message: 'Formato atteso: AA-0000.' });
+
+      min(path.price, 1); max(path.price, 9999);
+
+      // il limite può essere una funzione del contesto: dipende da un altro campo
+      max(path.stock, ({ valueOf }) => (valueOf(path.price) > 100 ? 10 : 1000));
+
+      // validate: null, un errore o un ARRAY di errori { kind, message }
+      validate(path.description, ({ value }) => [
+        value().length < 20 ? { kind: 'tooShort', message: 'Almeno 20 caratteri.' } : null,
+      ].filter((error) => error !== null));
+
+      // when: obbligatorio solo in certe condizioni (validazione condizionale)
+      required(path.contact, { when: ({ valueOf }) => valueOf(path.wantsContact) });
+      email(path.contact);
+    });
+
+    product.name().errors();      // [{ kind: 'required', message: … }]  → signal
+    product().errorSummary();     // tutti gli errori dell'albero, con il campo che li ha
+  `,
+  signalSchema: ts`
+    // schema RIUSABILE: le regole si scrivono una volta sola
+    const addressSchema = schema<Address>((path) => {
+      required(path.street); required(path.city);
+      pattern(path.zip, /^\\d{5}$/, { message: 'CAP: 5 cifre.' });
+    });
+
+    order = form(this.model, (path) => {
+      apply(path.billing, addressSchema);                                       // sempre
+      applyWhen(path.shipping, ({ valueOf }) => !valueOf(path.sameAsBilling),   // solo se serve
+                addressSchema);
+      applyEach(path.items, itemSchema);                                        // a ogni elemento
+
+      // validateTree: UN validator sull'array che punta l'errore sul figlio giusto
+      validateTree(path.items, ({ value, fieldTree }) => {
+        const products = value().map((item) => item.product.trim().toLowerCase());
+        return products
+          .map((product, i) => product !== '' && products.indexOf(product) !== i
+            ? { kind: 'duplicate', message: 'Riga duplicata.', fieldTree: fieldTree[i].product }
+            : null)
+          .filter((error) => error !== null);
+      });
+    });
+
+    // l'array si modifica sul MODELLO, non sul form
+    this.model.update((order) => ({ ...order, items: [...order.items, { product: '', qty: 1 }] }));
+
+    // template
+    @for (item of order.items; track $index) { <input [formField]="item.product" /> }
+  `,
 };
 
 /**
@@ -374,17 +579,25 @@ const CODE = {
  *   `FormRecord` per chiavi dinamiche, `value` (senza disabilitati, Partial) vs `getRawValue()`.
  * - `setValue` (tutte le chiavi) vs `patchValue` (parziale); `{ emitEvent: false }` per non emettere.
  * - Validators built-in (chiavi `minlength`/`maxlength` minuscole), `ValidatorFn` custom, validator di gruppo,
- *   `AsyncValidatorFn` (Observable che completa, stato PENDING), `updateOn: 'blur' | 'submit'`.
+ *   `AsyncValidatorFn` (Observable che completa, stato PENDING), `updateOn: 'change' | 'blur' | 'submit'`.
+ * - `Validators.compose`/`composeAsync`/`nullValidator`; validator su `FormArray` (l'errore sta sull'array).
+ * - Validazione condizionale: `setValidators`/`clearValidators`/`addValidators` + `updateValueAndValidity`,
+ *   `hasValidator` (confronto per referenza).
+ * - Validator come DIRETTIVA: `NG_VALIDATORS`/`NG_ASYNC_VALIDATORS` (multi) + `registerOnValidatorChange`.
+ * - Errori "esterni": `setErrors` (sostituisce, non viene ricalcolato), `setErrors(null)`, `markAsPending`.
  * - Flag: touched/untouched, dirty/pristine, valid/invalid/pending/disabled; `markAllAsTouched`,
  *   `updateValueAndValidity` dopo `addValidators`/`removeValidators`.
  * - Reattività: `valueChanges`/`statusChanges`/`events` → `toSignal`. In ZONELESS i getter dei controlli NON
  *   sono signal: la vista si aggiorna per gli eventi del template, ma NON per timer/async → usa toSignal.
  * - `FormArray` + `@for (…; track control)`; `formGroupName`/`formArrayName`/`formControlName` vs `[formControl]`.
- * - `ControlValueAccessor` + `NG_VALUE_ACCESSOR` per controlli custom.
+ * - `ControlValueAccessor` + `NG_VALUE_ACCESSOR` per controlli custom; sotto-form con `ControlContainer`
+ *   riesposto in `viewProviders` (niente CVA quando i campi sono più di uno).
  * - Accessibilità: label, `aria-invalid`, `aria-describedby`, errori dopo touched/submit, focus sul primo errore.
  * - Template-driven (`ngModel`, `#f="ngForm"`): asincrono, tipi non inferiti, logica nel template.
  * - Signal Forms (SPERIMENTALI, `@angular/forms/signals` v21.2): `form(model, schema, options)`, `[formField]`,
- *   `[formRoot]`, `submit()`, `validate`/`validateAsync`, `hidden`/`disabled`/`readonly`, `FormValueControl`.
+ *   `[formRoot]`, `submit()`, `validate`/`validateAsync`, `hidden`/`disabled`/`readonly`, `FormValueControl`,
+ *   catalogo validator (`required` con `when`, `email`, `min`/`max`, `minLength`/`maxLength`, `pattern`,
+ *   `message` vs `error`), schema riusabili (`schema`, `apply`, `applyWhen`, `applyEach`) e `validateTree`.
  */
 @Component({
   selector: 'sbu-forms-page',
@@ -407,6 +620,14 @@ const CODE = {
     SignalFormBasicsDemo,
     SignalFormLogicDemo,
     SignalFormControlDemo,
+    ComposedValidatorsDemo,
+    ConditionalValidatorsDemo,
+    UpdateOnDemo,
+    ValidatorDirectiveDemo,
+    SubFormDemo,
+    ServerErrorsDemo,
+    SignalValidatorsDemo,
+    SignalSchemaDemo,
   ],
   template: `
     <sbu-lab-page heading="Form">
@@ -585,6 +806,112 @@ const CODE = {
           stelle arriva da <code>max()</code> nello schema. Per un booleano c'è <code>FormCheckboxControl</code>
           (<code>checked = model()</code>). <code>[formField]</code> accetta anche componenti con
           <code>ControlValueAccessor</code>, solo per compatibilità.
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="15" title="compose, nullValidator e validator su un FormArray" level="intermedio">
+        <sbu-composed-validators-demo />
+        <sbu-code [code]="code.composed" />
+        <p note>
+          <code>Validators.compose</code> fonde più <code>ValidatorFn</code> in una sola (gli errori si uniscono in un
+          unico oggetto); <code>composeAsync</code> fa lo stesso con gli asincroni e
+          <code>Validators.nullValidator</code> è il "non validare nulla". I validator passati come SECONDO argomento di
+          <code>fb.array</code> stanno sull'array: il loro errore è in <code>tags.errors</code>, non sui figli, quindi va
+          mostrato una volta sola sotto al gruppo. Un array di CONTROLLI si lega con <code>[formControlName]="i"</code>
+          (con i gruppi servirebbe <code>[formGroupName]="i"</code>).
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="16" title="Validazione condizionale: setValidators, clearValidators, hasValidator" level="intermedio">
+        <sbu-conditional-validators-demo />
+        <sbu-code [code]="code.conditional" />
+        <p note>
+          <code>setValidators</code> SOSTITUISCE tutti i validator sincroni (<code>clearValidators()</code> =
+          <code>setValidators([])</code>); <code>addValidators</code>/<code>removeValidators</code> aggiungono e tolgono.
+          In ogni caso serve <code>updateValueAndValidity()</code>: i validator nuovi valgono solo dal prossimo ricalcolo.
+          <code>hasValidator</code> confronta per REFERENZA: funziona con <code>Validators.required</code>, non con
+          <code>Validators.minLength(3)</code> (crea una funzione nuova a ogni chiamata). Ascolta solo il campo che decide
+          e non riscriverne il valore, altrimenti il <code>valueChanges</code> si richiama da solo.
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="17" title="updateOn: 'change' vs 'blur' vs 'submit'" level="intermedio">
+        <sbu-update-on-demo />
+        <sbu-code [code]="code.updateOn" />
+        <p note>
+          <code>updateOn</code> decide quando il controllo aggiorna VALORE e validità: <code>'change'</code> (default) a
+          ogni tasto, <code>'blur'</code> all'uscita dal campo, <code>'submit'</code> solo al submit del form. Con
+          <code>'submit'</code> serve un <code>&lt;form&gt;</code> con <code>[formGroup]</code>: prima del primo invio il
+          valore resta quello iniziale e il controllo è ancora <code>pristine</code>. Si imposta sul controllo, sul gruppo
+          (default per i figli) o su <code>ngModelOptions</code> nei template-driven. Meno emissioni = meno validator
+          asincroni e meno render.
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="18" title="Validator come direttiva: NG_VALIDATORS e NG_ASYNC_VALIDATORS" level="avanzato">
+        <sbu-validator-directive-demo />
+        <sbu-code [code]="code.validatorDirective" />
+        <p note>
+          È così che sono fatti <code>required</code>, <code>minlength</code> e <code>pattern</code> dei template-driven:
+          una direttiva che si registra in <code>NG_VALIDATORS</code> (<code>multi: true</code>) e implementa
+          <code>validate()</code>. Vale sia con <code>ngModel</code> sia con <code>formControlName</code>/<code>[formControl]</code>.
+          Se il validator ha PARAMETRI serve <code>registerOnValidatorChange</code>: senza, cambiare il parametro non
+          rivalida il controllo e l'errore resta quello vecchio. Per gli asincroni cambia solo il token
+          (<code>NG_ASYNC_VALIDATORS</code>) e il tipo di ritorno (Observable/Promise che COMPLETA).
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="19" title="Sotto-form riusabile con ControlContainer e viewProviders" level="avanzato">
+        <sbu-sub-form-demo />
+        <sbu-code [code]="code.subForm" />
+        <p note>
+          Per un componente che contiene PIÙ campi del form padre non serve un <code>ControlValueAccessor</code>: basta
+          riesporre il <code>ControlContainer</code> dell'elemento host in <code>viewProviders</code> (non
+          <code>providers</code>: <code>formControlName</code> lo inietta con <code>&#64;Host()</code> e si fermerebbe al
+          confine della vista). Il padre scrive <code>&lt;sbu-address-fields formGroupName="billing" /&gt;</code> e
+          mantiene il gruppo TIPIZZATO; lo stesso componente serve due indirizzi diversi. Gli id dei campi arrivano da un
+          input, altrimenti due istanze avrebbero gli stessi <code>id</code> (label rotte).
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="20" title="Errori dal server: setErrors, markAsPending, setErrors(null)" level="intermedio">
+        <sbu-server-errors-demo />
+        <sbu-code [code]="code.serverErrors" />
+        <p note>
+          <code>setErrors</code> scrive gli errori "a mano" e mette subito il controllo in stato invalido: è il modo di
+          portare nel form la risposta 422 del server. Attenzione: SOSTITUISCE l'oggetto errori (conserva gli altri con
+          lo spread) e NON viene ricalcolato, quindi va tolto quando il valore cambia — <code>setErrors(null)</code>
+          azzera. <code>markAsPending()</code> mette lo status a <code>PENDING</code> mentre la richiesta è in volo, e
+          <code>updateValueAndValidity()</code> lo fa uscire. In alternativa: un <code>AsyncValidatorFn</code> che
+          interroga il server, quando la verifica dipende dal singolo campo.
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="21" title="Signal Forms: tutti i validator (required, email, min/max, pattern, validate, when)" level="avanzato">
+        <sbu-signal-validators-demo />
+        <sbu-code [code]="code.signalValidators" />
+        <p note>
+          I validator dei Signal Forms sono FUNZIONI dello schema, non array sul controllo:
+          <code>required</code>, <code>email</code>, <code>min</code>/<code>max</code>,
+          <code>minLength</code>/<code>maxLength</code>, <code>pattern</code>, più <code>validate</code> per i custom
+          (restituisce <code>null</code>, un errore o un ARRAY di errori <code>&#123; kind, message &#125;</code>). Ogni
+          config accetta <code>message</code> OPPURE <code>error</code> (con i factory tipizzati
+          <code>requiredError</code>, <code>minError</code>, …), mai entrambi; i limiti possono essere funzioni del
+          contesto, quindi dipendere da altri campi. <code>required</code> ha <code>when</code> per la validazione
+          condizionale. Tutto è signal: <code>errors()</code>, <code>errorSummary()</code>, <code>valid()</code>.
+        </p>
+      </sbu-example>
+
+      <sbu-example [n]="22" title="Signal Forms: schema riusabili (apply, applyWhen, applyEach) e validateTree" level="avanzato">
+        <sbu-signal-schema-demo />
+        <sbu-code [code]="code.signalSchema" />
+        <p note>
+          <code>schema&lt;T&gt;()</code> impacchetta regole riusabili: <code>apply</code> le applica a un sotto-campo,
+          <code>applyWhen</code> solo quando una condizione è vera (i campi "spenti" non contano per la validità del
+          padre), <code>applyEach</code> a ogni elemento di un array. <code>validateTree</code> è il cross-field degli
+          array e dei gruppi: un solo validator che restituisce errori con il <code>fieldTree</code> del campo a cui
+          assegnarli, così il messaggio finisce sulla riga giusta invece che sul contenitore. Le righe si aggiungono e
+          si tolgono sul MODELLO (<code>signal.update</code>), non sul form: i campi seguono la struttura dei dati.
         </p>
       </sbu-example>
     </sbu-lab-page>
